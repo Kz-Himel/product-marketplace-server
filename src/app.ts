@@ -1,8 +1,10 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import { sendSuccess } from './utils/response';
 import { notFoundHandler } from './middlewares/notFound.middleware';
 import { globalErrorHandler } from './middlewares/error.middleware';
+import { globalRateLimiter, authRateLimiter } from './middlewares/rateLimiter.middleware';
 
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
@@ -13,11 +15,16 @@ import orderRoutes from './routes/order.routes';
 
 const app: Application = express();
 
+// Security Middlewares
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
+// Apply Global Rate Limiter
+app.use('/api', globalRateLimiter);
+
 // Routes
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRateLimiter, authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
@@ -29,6 +36,7 @@ app.get('/health', (req: Request, res: Response) => {
   return sendSuccess(res, 200, 'API is healthy and operational');
 });
 
+// 404 & Global Error Handling
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
 

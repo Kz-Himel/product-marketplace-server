@@ -2,95 +2,64 @@ import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 import { sendError } from '../utils/response';
+import { AppError } from '../utils/AppError';
 
 export const globalErrorHandler = (
-  err: unknown,
+  err: any,
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  console.error('[Error Details]:', err);
+  let statusCode = err.statusCode || 500;
+  let message = err.message || 'Internal Server Error';
+  let errorDetails: any = null;
 
-  // ==========================================
-  // Zod Validation Error
-  // ==========================================
-  if (err instanceof ZodError) {
-    const formattedErrors = err.issues.map((issue) => ({
+  // Handle Custom AppError
+  if (err instanceof AppError) {
+    statusCode = err.statusCode;
+    message = err.message;
+  }
+
+  // Handle Zod Validation Errors
+  else if (err instanceof ZodError) {
+    statusCode = 400;
+    message = 'Validation Error';
+    errorDetails = err.issues.map((issue) => ({
       field: issue.path.join('.'),
       message: issue.message,
     }));
-
-    return sendError(
-      res,
-      400,
-      'Validation Error',
-      formattedErrors
-    );
   }
 
-  // ==========================================
-  // Prisma Unique Constraint Violation
-  // ==========================================
-  if (
-    err instanceof Prisma.PrismaClientKnownRequestError &&
-    err.code === 'P2002'
-  ) {
-    const target = Array.isArray(err.meta?.target)
-      ? err.meta.target.map(String)
-      : ['field'];
-
-    return sendError(
-      res,
-      409,
-      `Duplicate entry for ${target.join(', ')}`
-    );
+  // Handle Prisma Known Request Errors
+  else if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    // Unique constraint violation (e.g. Email already exists)
+    if (err.code === 'P2002') {
+      statusCode = 400;
+      message = `Duplicate field value entered: ${err.meta?.target}`;
+    }
+    // Record to update/delete not found
+    else if (err.code === 'P2025') {
+      statusCode = 404;
+      message = 'Record not found in the database';
+    } else {
+      statusCode = 400;
+      message = `Database Error: ${err.message}`;
+    }
   }
 
-  // ==========================================
-  // Prisma Record Not Found
-  // ==========================================
-  if (
-    err instanceof Prisma.PrismaClientKnownRequestError &&
-    err.code === 'P2025'
-  ) {
-    return sendError(
-      res,
-      404,
-      'Requested record not found'
-    );
+  // Handle JWT Validation Errors
+  else if (err.name === 'JsonWebTokenError') {
+    statusCode = 401;
+    message = 'Invalid token. Please log in again.';
+  } else if (err.name === 'TokenExpiredError') {
+    statusCode = 401;
+    message = 'Token has expired. Please log in again.';
   }
 
-  // ==========================================
-  // Custom Application Error
-  // ==========================================
-  if (
-    typeof err === 'object' &&
-    err !== null &&
-    'statusCode' in err
-  ) {
-    const statusCode = Number(
-      (err as { statusCode?: unknown }).statusCode
-    );
-
-    const message =
-      'message' in err &&
-      typeof (err as { message?: unknown }).message === 'string'
-        ? (err as { message: string }).message
-        : 'Internal Server Error';
-
-    return sendError(
-      res,
-      statusCode || 500,
-      message
-    );
-  }
-
-  // ==========================================
-  // Unknown / Unhandled Error
-  // ==========================================
   return sendError(
     res,
-    500,
-    'Internal Server Error'
+    statusCode,
+    message,
+    process.env.NODE_ENV === 'development' ? errorDetails || err : errorDetails
   );
 };
