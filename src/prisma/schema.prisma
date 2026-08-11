@@ -81,7 +81,7 @@ model Product {
   id          String        @id @default(uuid())
   name        String
   description String
-  price       Float
+  price       Decimal       @db.Decimal(10, 2)
   stock       Int
   image       String?
   status      ProductStatus @default(ACTIVE)
@@ -90,9 +90,9 @@ model Product {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  category Category @relation(fields: [categoryId], references: [id])
+  category Category    @relation(fields: [categoryId], references: [id])
   reviews  Review[]
-  orders   Order[]
+  items    OrderItem[]
 
   @@index([categoryId])
   @@index([isDeleted])
@@ -113,6 +113,7 @@ model Review {
   user    User    @relation(fields: [userId], references: [id])
   product Product @relation(fields: [productId], references: [id])
 
+  @@unique([userId, productId])
   @@index([userId])
   @@index([productId])
   @@index([isDeleted])
@@ -121,20 +122,33 @@ model Review {
 
 model Order {
   id         String      @id @default(uuid())
-  quantity   Int
-  totalPrice Float
+  totalPrice Decimal     @db.Decimal(10, 2)
   status     OrderStatus @default(PENDING)
   userId     String
-  productId  String
   isDeleted  Boolean     @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
+  user  User        @relation(fields: [userId], references: [id])
+  items OrderItem[]
 
   @@index([userId])
-  @@index([productId])
   @@index([isDeleted])
   @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
 }
