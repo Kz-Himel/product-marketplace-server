@@ -4,42 +4,93 @@ import { Prisma } from '@prisma/client';
 import { sendError } from '../utils/response';
 
 export const globalErrorHandler = (
-  err: any,
+  err: unknown,
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   console.error('[Error Details]:', err);
 
-  // Handle Zod Validation Errors
+  // ==========================================
+  // Zod Validation Error
+  // ==========================================
   if (err instanceof ZodError) {
-    const formattedErrors = err.errors.map((e) => ({
-      field: e.path.join('.'),
-      message: e.message,
+    const formattedErrors = err.issues.map((issue) => ({
+      field: issue.path.join('.'),
+      message: issue.message,
     }));
-    return sendError(res, 400, 'Validation Error', formattedErrors);
+
+    return sendError(
+      res,
+      400,
+      'Validation Error',
+      formattedErrors
+    );
   }
 
-  // Handle Prisma Unique Constraint Violation
+  // ==========================================
+  // Prisma Unique Constraint Violation
+  // ==========================================
   if (
     err instanceof Prisma.PrismaClientKnownRequestError &&
     err.code === 'P2002'
   ) {
-    const target = (err.meta?.target as string[]) || ['field'];
-    return sendError(res, 409, `Duplicate entry for ${target.join(', ')}`);
+    const target = Array.isArray(err.meta?.target)
+      ? err.meta.target.map(String)
+      : ['field'];
+
+    return sendError(
+      res,
+      409,
+      `Duplicate entry for ${target.join(', ')}`
+    );
   }
 
-  // Handle Prisma Record Not Found
+  // ==========================================
+  // Prisma Record Not Found
+  // ==========================================
   if (
     err instanceof Prisma.PrismaClientKnownRequestError &&
     err.code === 'P2025'
   ) {
-    return sendError(res, 404, 'Requested record not found');
+    return sendError(
+      res,
+      404,
+      'Requested record not found'
+    );
   }
 
-  // Custom App Error
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal Server Error';
+  // ==========================================
+  // Custom Application Error
+  // ==========================================
+  if (
+    typeof err === 'object' &&
+    err !== null &&
+    'statusCode' in err
+  ) {
+    const statusCode = Number(
+      (err as { statusCode?: unknown }).statusCode
+    );
 
-  return sendError(res, statusCode, message);
+    const message =
+      'message' in err &&
+      typeof (err as { message?: unknown }).message === 'string'
+        ? (err as { message: string }).message
+        : 'Internal Server Error';
+
+    return sendError(
+      res,
+      statusCode || 500,
+      message
+    );
+  }
+
+  // ==========================================
+  // Unknown / Unhandled Error
+  // ==========================================
+  return sendError(
+    res,
+    500,
+    'Internal Server Error'
+  );
 };
