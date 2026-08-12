@@ -20,7 +20,7 @@ export class ProductService {
     return await prisma.product.create({
       data: {
         name: validated.name,
-        description: validated.description,
+        description: validated.description ?? '',
         price: validated.price,
         stock: validated.stock,
         image: validated.image,
